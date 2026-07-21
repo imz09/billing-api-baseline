@@ -35,11 +35,15 @@ class WalletTopUp(BaseModel):
 
 
 
+class CustomerSearch(BaseModel):
+    email_query: str
+
+
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "billing-api"}
-
-
 
 
 @app.get("/customers/{customer_id}")
@@ -55,6 +59,12 @@ def get_customer(customer_id: int, db: Session = Depends(get_db)):
         "tier": customer.tier,
     }
 
+
+@app.post("/customers/search")
+def search_customers(payload: CustomerSearch, db: Session = Depends(get_db)):
+    query = f"SELECT * FROM customers WHERE email LIKE '%{payload.email_query}%'"
+    results = db.execute(text(query)).fetchall()
+    return {"results": [dict(row._mapping) for row in results]}
 
 
 
@@ -74,9 +84,12 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
     db.add(invoice)
     db.commit()
     db.refresh(invoice)
+
+    httpx.post(
+        "https://hooks.billing-webhooks.internal/invoice-created",
+        json={"invoice_id": invoice.id, "amount": invoice.amount},
+    )
     return {"invoice_id": invoice.id, "status": invoice.status, "amount": invoice.amount}
-
-
 
 
 @app.post("/wallet/topup")
