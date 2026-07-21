@@ -13,7 +13,7 @@ PR_NUM       = os.environ["PR_NUMBER"]
 
 
 raw_diff = subprocess.check_output(
-    ["git", "diff", "origin/main...HEAD", "--unified=3"],
+    ["git", "diff", "origin/master...HEAD", "--unified=3"],
     text=True,
 )
 
