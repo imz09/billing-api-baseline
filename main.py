@@ -35,11 +35,15 @@ class WalletTopUp(BaseModel):
 
 
 
+class CustomerSearch(BaseModel):
+    email_query: str
+
+
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "billing-api"}
-
-
 
 
 @app.get("/customers/{customer_id}")
@@ -54,6 +58,15 @@ def get_customer(customer_id: int, db: Session = Depends(get_db)):
         "wallet_balance": customer.wallet_balance,
         "tier": customer.tier,
     }
+
+
+@app.post("/customers/search")
+def search_customers(payload: CustomerSearch, db: Session = Depends(get_db)):
+    results = db.execute(
+        text("SELECT * FROM customers WHERE email LIKE :q"),
+        {"q": f"%{payload.email_query}%"},
+    ).fetchall()
+    return {"results": [dict(row._mapping) for row in results]}
 
 
 
@@ -74,16 +87,27 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
     db.add(invoice)
     db.commit()
     db.refresh(invoice)
+    try:
+        httpx.post(
+            "https://hooks.billing-webhooks.internal/invoice-created",
+            json={"invoice_id": invoice.id, "amount": invoice.amount},
+            timeout=3.0,
+        )
+    except (httpx.TimeoutException, httpx.RequestError) as exc:
+        print(f"Webhook notification failed (non-fatal): {exc}")
     return {"invoice_id": invoice.id, "status": invoice.status, "amount": invoice.amount}
-
-
 
 
 @app.post("/wallet/topup")
 def wallet_topup(payload: WalletTopUp, db: Session = Depends(get_db)):
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Top-up amount must be positive")
-    customer = db.query(Customer).filter(Customer.id == payload.customer_id).first()
+    customer = (
+        db.query(Customer)
+        .filter(Customer.id == payload.customer_id)
+        .with_for_update()
+        .first()
+    )
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     customer.wallet_balance += payload.amount
