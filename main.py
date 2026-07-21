@@ -62,9 +62,12 @@ def get_customer(customer_id: int, db: Session = Depends(get_db)):
 
 @app.post("/customers/search")
 def search_customers(payload: CustomerSearch, db: Session = Depends(get_db)):
-    query = f"SELECT * FROM customers WHERE email LIKE '%{payload.email_query}%'"
-    results = db.execute(text(query)).fetchall()
+    results = db.execute(
+        text("SELECT * FROM customers WHERE email LIKE :q"),
+        {"q": f"%{payload.email_query}%"},
+    ).fetchall()
     return {"results": [dict(row._mapping) for row in results]}
+
 
 
 
